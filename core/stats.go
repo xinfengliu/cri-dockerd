@@ -208,17 +208,10 @@ func (ds *dockerService) ListContainerStats(
 	results := make([]*runtimeapi.ContainerStats, 0, len(containers))
 
 	g, ctx := errgroup.WithContext(ctx)
-	// The `getContainerStats` may take some time. When there are many containers,
-	// the whole `ListContainerStats` may have long delays if the number of workers is
-	// small. So we want to set a bigger value for the number of workers to avoid
-	// too long delays before the issue mentioned in https://github.com/moby/moby/pull/46448
-	// is fixed.
-	// Consider a common node with 8 CPU running dozens of pods, NumCPU() * 6 may be a moderate
-	// number.
-	numWorkers := runtime.NumCPU() * 6
-	if numWorkers > numContainers {
-		numWorkers = numContainers
-	}
+
+	// To avoid `connect: resource temporarily unavailable` error in some systems
+	const maxWorkers = 100
+	numWorkers := min(maxWorkers, runtime.NumCPU()*6, numContainers)
 	g.SetLimit(numWorkers)
 
 	// Collect container stats and send to result channel.
