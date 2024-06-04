@@ -25,11 +25,11 @@ import (
 	"io"
 	"io/ioutil"
 	"regexp"
-	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
 
+	dockerclistreams "github.com/docker/cli/cli/streams"
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerimagetypes "github.com/docker/docker/api/types/image"
@@ -291,107 +291,114 @@ func base64EncodeAuth(auth dockertypes.AuthConfig) (string, error) {
 	return base64.URLEncoding.EncodeToString(buf.Bytes()), nil
 }
 
+/*
 // progress is a wrapper of dockermessage.JSONMessage with a lock protecting it.
-type progress struct {
-	sync.RWMutex
-	// message stores the latest docker json message.
-	message *dockermessage.JSONMessage
-	// timestamp of the latest update.
-	timestamp time.Time
-}
 
-func newProgress() *progress {
-	return &progress{timestamp: time.Now()}
-}
+	type progress struct {
+		sync.RWMutex
+		// message stores the latest docker json message.
+		message *dockermessage.JSONMessage
+		// timestamp of the latest update.
+		timestamp time.Time
+	}
 
-func (p *progress) set(msg *dockermessage.JSONMessage) {
-	p.Lock()
-	defer p.Unlock()
-	p.message = msg
-	p.timestamp = time.Now()
-}
+	func newProgress() *progress {
+		return &progress{timestamp: time.Now()}
+	}
 
-func (p *progress) get() (string, time.Time) {
-	p.RLock()
-	defer p.RUnlock()
-	if p.message == nil {
-		return "No progress", p.timestamp
+	func (p *progress) set(msg *dockermessage.JSONMessage) {
+		p.Lock()
+		defer p.Unlock()
+		p.message = msg
+		p.timestamp = time.Now()
 	}
-	// The following code is based on JSONMessage.Display
-	var prefix string
-	if p.message.ID != "" {
-		prefix = fmt.Sprintf("%s: ", p.message.ID)
+
+	func (p *progress) get() (string, time.Time) {
+		p.RLock()
+		defer p.RUnlock()
+		if p.message == nil {
+			return "No progress", p.timestamp
+		}
+		// The following code is based on JSONMessage.Display
+		var prefix string
+		if p.message.ID != "" {
+			prefix = fmt.Sprintf("%s: ", p.message.ID)
+		}
+		if p.message.Progress == nil {
+			return fmt.Sprintf("%s%s", prefix, p.message.Status), p.timestamp
+		}
+		return fmt.Sprintf(
+			"%s%s %s",
+			prefix,
+			p.message.Status,
+			p.message.Progress.String(),
+		), p.timestamp
 	}
-	if p.message.Progress == nil {
-		return fmt.Sprintf("%s%s", prefix, p.message.Status), p.timestamp
-	}
-	return fmt.Sprintf(
-		"%s%s %s",
-		prefix,
-		p.message.Status,
-		p.message.Progress.String(),
-	), p.timestamp
-}
 
 // progressReporter keeps the newest image pulling progress and periodically report the newest progress.
-type progressReporter struct {
-	*progress
-	image                     string
-	cancel                    context.CancelFunc
-	stopCh                    chan struct{}
-	imagePullProgressDeadline time.Duration
-}
+
+	type progressReporter struct {
+		*progress
+		image                     string
+		cancel                    context.CancelFunc
+		stopCh                    chan struct{}
+		imagePullProgressDeadline time.Duration
+	}
 
 // newProgressReporter creates a new progressReporter for specific image with specified reporting interval
 func newProgressReporter(
+
 	image string,
 	cancel context.CancelFunc,
 	imagePullProgressDeadline time.Duration,
-) *progressReporter {
-	return &progressReporter{
-		progress:                  newProgress(),
-		image:                     image,
-		cancel:                    cancel,
-		stopCh:                    make(chan struct{}),
-		imagePullProgressDeadline: imagePullProgressDeadline,
+
+	) *progressReporter {
+		return &progressReporter{
+			progress:                  newProgress(),
+			image:                     image,
+			cancel:                    cancel,
+			stopCh:                    make(chan struct{}),
+			imagePullProgressDeadline: imagePullProgressDeadline,
+		}
 	}
-}
 
 // start starts the progressReporter
-func (p *progressReporter) start() {
-	go func() {
-		ticker := time.NewTicker(defaultImagePullingProgressReportInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				progress, timestamp := p.progress.get()
-				// If there is no progress for p.imagePullProgressDeadline, cancel the operation.
-				if time.Since(timestamp) > p.imagePullProgressDeadline {
-					logrus.Errorf(
-						"Cancel pulling image %s because it exceeded image pull deadline %s. Latest progress %s",
-						p.image,
-						p.imagePullProgressDeadline.String(),
-						progress,
-					)
-					p.cancel()
+
+	func (p *progressReporter) start() {
+		go func() {
+			ticker := time.NewTicker(defaultImagePullingProgressReportInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					progress, timestamp := p.progress.get()
+					// If there is no progress for p.imagePullProgressDeadline, cancel the operation.
+					if time.Since(timestamp) > p.imagePullProgressDeadline {
+						logrus.Errorf(
+							"Cancel pulling image %s because it exceeded image pull deadline %s. Latest progress %s",
+							p.image,
+							p.imagePullProgressDeadline.String(),
+							progress,
+						)
+						p.cancel()
+						return
+					}
+					logrus.Infof("Pulling image %s: %s", p.image, progress)
+				case <-p.stopCh:
+					progress, _ := p.progress.get()
+					logrus.Infof("Stop pulling image %s: %s", p.image, progress)
 					return
 				}
-				logrus.Infof("Pulling image %s: %s", p.image, progress)
-			case <-p.stopCh:
-				progress, _ := p.progress.get()
-				logrus.Infof("Stop pulling image %s: %s", p.image, progress)
-				return
 			}
-		}
-	}()
-}
+		}()
+	}
 
 // stop stops the progressReporter
-func (p *progressReporter) stop() {
-	close(p.stopCh)
-}
 
+	func (p *progressReporter) stop() {
+		close(p.stopCh)
+	}
+*/
 func (d *kubeDockerClient) PullImage(
 	image string,
 	auth dockertypes.AuthConfig,
@@ -410,25 +417,27 @@ func (d *kubeDockerClient) PullImage(
 		return err
 	}
 	defer resp.Close()
-	reporter := newProgressReporter(image, cancel, d.imagePullProgressDeadline)
-	reporter.start()
-	defer reporter.stop()
-	decoder := json.NewDecoder(resp)
-	for {
-		var msg dockermessage.JSONMessage
-		err := decoder.Decode(&msg)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if msg.Error != nil {
-			return msg.Error
-		}
-		reporter.set(&msg)
-	}
-	return nil
+	out := dockerclistreams.NewOut(logrus.StandardLogger().Out)
+	return dockermessage.DisplayJSONMessagesToStream(resp, out, nil)
+	// reporter := newProgressReporter(image, cancel, d.imagePullProgressDeadline)
+	// reporter.start()
+	// defer reporter.stop()
+	// decoder := json.NewDecoder(resp)
+	// for {
+	// 	var msg dockermessage.JSONMessage
+	// 	err := decoder.Decode(&msg)
+	// 	if err == io.EOF {
+	// 		break
+	// 	}
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	if msg.Error != nil {
+	// 		return msg.Error
+	// 	}
+	// 	reporter.set(&msg)
+	// }
+	// return nil
 }
 
 func (d *kubeDockerClient) RemoveImage(
